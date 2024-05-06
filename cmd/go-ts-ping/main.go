@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+	"go-ts-ping/internal/teamspeak"
 	"log"
 	"math/rand"
 	"net/http"
@@ -14,87 +14,9 @@ import (
 	"time"
 )
 
-type user struct {
-	id   int
-	name string
-}
-
-func getUsers(client *http.Client) ([]user, error) {
-	req, err := http.NewRequest("GET",
-		fmt.Sprintf(
-			"%s/%s/clientlist",
-			os.Getenv("WEBQUERY_URL"),
-			os.Getenv("WEBQUERY_SERVER_ID"),
-		), nil)
-
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("x-api-key", os.Getenv("WEBQUERY_API_KEY"))
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Println(err)
-		}
-	}()
-
-	bytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	response := struct {
-		Body []struct {
-			ClientDatabaseID string `json:"client_database_id"`
-			ClientNickname   string `json:"client_nickname"`
-		}
-
-		Status struct {
-			Code    int
-			Message string
-		}
-	}{}
-
-	if err := json.Unmarshal(bytes, &response); err != nil {
-		return nil, err
-	}
-
-	if response.Status.Code != 0 {
-		return nil, err
-	}
-
-	users := []user{}
-	for _, client := range response.Body {
-		id, err := strconv.Atoi(client.ClientDatabaseID)
-		if err != nil {
-			return nil, err
-		}
-
-		users = append(users, user{
-			id:   id,
-			name: client.ClientNickname,
-		})
-	}
-
-	return users, nil
-}
-
-func main() {
-	log.SetFlags(log.Flags() | log.Llongfile)
-	firstLoop := true
-	sleep, err := strconv.Atoi(os.Getenv("SLEEP"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	client := &http.Client{}
-	users := []user{}
-	templates := []string{
+var (
+	clientList = []teamspeak.Client{}
+	templates  = []string{
 		"%s joined the party.",
 		"%s is here.",
 		"Welcome, %s. We hope you brought pizza.",
@@ -110,65 +32,87 @@ func main() {
 		"Yay you made it, %s!",
 	}
 
-	for {
-		if !firstLoop {
-			time.Sleep(time.Duration(sleep) * time.Second)
-		}
+	discordWebhookURL = os.Getenv("DISCORD_WEBHOOK_URL")
+)
 
-		currentUsers, err := getUsers(client)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+func loop() error {
+	newClientList, err := teamspeak.GetClientList()
+	if err != nil {
+		return err
+	}
 
-		newUsers := []user{}
-		for _, currentUser := range currentUsers {
-			contains := false
-			for _, user := range users {
-				if user.id == currentUser.id {
-					contains = true
-					break
-				}
-			}
-
-			if !contains {
-				newUsers = append(newUsers, currentUser)
+	newClients := []teamspeak.Client{}
+	for _, newClient := range newClientList {
+		contains := false
+		for _, user := range clientList {
+			if user.ClientDatabaseID == newClient.ClientDatabaseID {
+				contains = true
+				break
 			}
 		}
 
-		users = currentUsers
-		if firstLoop {
-			firstLoop = false
-			continue
+		if !contains {
+			newClients = append(newClients, newClient)
 		}
+	}
 
-		if len(newUsers) == 0 {
-			continue
-		}
+	clientList = newClientList
+	if len(clientList) <= 1 {
+		return nil
+	}
 
-		messages := []string{}
-		for _, user := range newUsers {
-			messages = append(messages, fmt.Sprintf(templates[rand.Intn(len(templates))], user.name))
-		}
+	if len(newClients) == 0 {
+		return nil
+	}
 
-		buf, err := json.Marshal(map[string]string{"content": strings.Join(messages, "\n")})
+	messages := []string{}
+	for _, client := range newClients {
+		clientInfo, err := teamspeak.GetClientInfo(client.CLID)
 		if err != nil {
-			log.Println(err)
 			continue
 		}
 
-		resp, err := http.Post(os.Getenv("DISCORD_WEBHOOK_URL"), "application/json", bytes.NewBuffer(buf))
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		messages = append(
+			messages,
+			fmt.Sprintf(
+				"%s :flag_%s:",
+				fmt.Sprintf(templates[rand.Intn(len(templates))], client.ClientNickname),
+				strings.ToLower(clientInfo.ClientCountry),
+			),
+		)
+	}
 
-		if err := resp.Body.Close(); err != nil {
-			log.Println(err)
-		}
+	buf, err := json.Marshal(map[string]string{"content": strings.Join(messages, "\n")})
+	if err != nil {
+		return err
+	}
 
-		if resp.StatusCode != 204 {
-			log.Println(resp.Status)
+	resp, err := http.Post(discordWebhookURL, "application/json", bytes.NewBuffer(buf))
+	if err != nil {
+		return err
+	}
+
+	if err := resp.Body.Close(); err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 204 {
+		return err
+	}
+
+	return nil
+}
+
+func main() {
+	log.SetFlags(log.Flags() | log.Llongfile)
+	sleep, err := strconv.Atoi(os.Getenv("SLEEP"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for ; true; <-time.Tick(time.Duration(sleep) * time.Second) {
+		if err := loop(); err != nil {
+			log.Println(err)
 		}
 	}
 }
