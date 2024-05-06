@@ -75,17 +75,18 @@ func loop() error {
 			continue
 		}
 
-		suffix := ""
+		nickname := client.ClientNickname
 		if clientInfo.ClientCountry != "" {
-			suffix = fmt.Sprintf(
-				" :flag_%s:",
+			nickname = fmt.Sprintf(
+				"%s :flag_%s:",
+				nickname,
 				strings.ToLower(clientInfo.ClientCountry),
 			)
 		}
 
 		messages = append(
 			messages,
-			fmt.Sprintf(templates[rand.Intn(len(templates))], client.ClientNickname)+suffix,
+			fmt.Sprintf(templates[rand.Intn(len(templates))], nickname),
 		)
 	}
 
