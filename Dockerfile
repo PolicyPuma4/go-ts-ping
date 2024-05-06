@@ -4,6 +4,7 @@ WORKDIR /usr/src/app
 
 COPY go.mod ./
 COPY cmd ./cmd
+COPY internal ./internal
 
 RUN go build -ldflags="-s -w" -o /usr/local/bin/app cmd/go-ts-ping/main.go
 
