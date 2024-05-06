@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -67,29 +68,38 @@ func loop() error {
 		return nil
 	}
 
+	mu := sync.Mutex{}
+	wg := sync.WaitGroup{}
 	messages := []string{}
 	for _, client := range newClients {
-		clientInfo, err := teamspeak.GetClientInfo(client.CLID)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			clientInfo, err := teamspeak.GetClientInfo(client.CLID)
+			if err != nil {
+				log.Println(err)
+				return
+			}
 
-		nickname := client.ClientNickname
-		if clientInfo.ClientCountry != "" {
-			nickname = fmt.Sprintf(
-				"%s :flag_%s:",
-				nickname,
-				strings.ToLower(clientInfo.ClientCountry),
+			nickname := client.ClientNickname
+			if clientInfo.ClientCountry != "" {
+				nickname = fmt.Sprintf(
+					"%s :flag_%s:",
+					nickname,
+					strings.ToLower(clientInfo.ClientCountry),
+				)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			messages = append(
+				messages,
+				fmt.Sprintf(templates[rand.Intn(len(templates))], nickname),
 			)
-		}
-
-		messages = append(
-			messages,
-			fmt.Sprintf(templates[rand.Intn(len(templates))], nickname),
-		)
+		}()
 	}
 
+	wg.Wait()
 	buf, err := json.Marshal(map[string]string{"content": strings.Join(messages, "\n")})
 	if err != nil {
 		return err
