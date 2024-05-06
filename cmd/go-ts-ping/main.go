@@ -71,6 +71,7 @@ func loop() error {
 	for _, client := range newClients {
 		clientInfo, err := teamspeak.GetClientInfo(client.CLID)
 		if err != nil {
+			log.Println(err)
 			continue
 		}
 
