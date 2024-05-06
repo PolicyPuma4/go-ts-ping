@@ -137,5 +137,5 @@ func GetClientInfo(clid string) (ClientInfo, error) {
 		return ClientInfo{}, errors.New(body.Status.Message)
 	}
 
-	return ClientInfo{}, nil
+	return body.Body[0], nil
 }
