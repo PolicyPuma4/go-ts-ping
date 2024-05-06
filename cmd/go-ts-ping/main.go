@@ -68,8 +68,8 @@ func loop() error {
 		return nil
 	}
 
-	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
+	mu := sync.Mutex{}
 	messages := []string{}
 	for _, client := range newClients {
 		wg.Add(1)
