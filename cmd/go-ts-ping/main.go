@@ -16,6 +16,7 @@ import (
 
 var (
 	clientList = []teamspeak.Client{}
+	firstLoop  = true
 	templates  = []string{
 		"%s joined the party.",
 		"%s is here.",
@@ -57,7 +58,8 @@ func loop() error {
 	}
 
 	clientList = newClientList
-	if len(clientList) <= 1 {
+	if firstLoop {
+		firstLoop = false
 		return nil
 	}
 
